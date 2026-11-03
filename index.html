@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Teachable Machine HTML Generator</title>
+    <!-- 테서플로우 및 티처블 머신 라이브러리 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; display: flex; gap: 20px; background-color: #f9f9f9; }
+        .panel { flex: 1; border: 1px solid #ddd; padding: 20px; border-radius: 8px; background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        #imagePreview { max-width: 100%; height: auto; display: none; margin-top: 10px; border-radius: 4px; }
+        pre { background: #2d3748; color: #fff; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: monospace; }
+        button { padding: 10px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .download-btn { background-color: #008CBA; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>1. 이미지 업로드</h2>
+        <input type="file" id="fileInput" accept="image/*">
+        <br>
+        <img id="imagePreview" alt="미리보기">
+    </div>
+
+    <div class="panel">
+        <h2>2. 비전 인식 및 HTML 결과</h2>
+        <button id="predictBtn" onclick="predict()" disabled>인식 시작하기</button>
+        <div id="loading" style="margin-top:10px; color: #666;">모델 로딩 중...</div>
+        
+        <h3 style="margin-top: 20px;">결과 코드</h3>
+        <pre><code id="htmlCode">이미지를 업로드하고 인식 버튼을 눌러주세요.</code></pre>
+        <button id="downloadCodeBtn" class="download-btn" onclick="downloadCode()" style="display:none;">코드 다운로드 (.html)</button>
+        
+        <h3 style="margin-top: 20px;">미리보기</h3>
+        <div id="uiPreview" style="border: 1px dashed #ccc; padding: 15px; min-height: 100px; border-radius: 4px;"></div>
+    </div>
+
+    <script>
+        // 💡 중요: 1단계에서 학습 후 발급받은 본인의 티처블 머신 모델 URL을 입력하세요.
+        const URL = "https://teachablemachine.withgoogle.com/models/여러분의_모델_코드/"; 
+        let model, maxPredictions;
+        let generatedHTML = "";
+
+        // 페이지 로드 시 모델 초기화
+        async function init() {
+            try {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+                
+                document.getElementById('loading').innerText = "모델 로드 완료!";
+                document.getElementById('predictBtn').disabled = false;
+            } catch (e) {
+                document.getElementById('loading').innerText = "모델 로드 실패 (URL을 확인해주세요)";
+                console.error(e);
+            }
+        }
+        init();
+
+        // 이미지 파일 선택 시 미리보기 처리
+        const fileInput = document.getElementById('fileInput');
+        const imgPreview = document.getElementById('imagePreview');
+        
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    imgPreview.src = event.target.result;
+                    imgPreview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 미리 정의해 둔 컴포넌트별 HTML 템플릿 (CSS 포함)
+        const htmlTemplates = {
+            "button": `<button style="padding: 10px 20px; background-color: #007BFF; color: white; border: none; border-radius: 5px; cursor: pointer;">기본 버튼</button>`,
+            "input": `<input type="text" placeholder="내용을 입력하세요" style="padding: 10px; border: 1px solid #ccc; border-radius: 5px; width: 100%; max-width: 300px;">`,
+            "card": `<div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; max-width: 300px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-family: sans-serif;"><h4 style="margin: 0 0 10px 0;">카드 제목</h4><p style="color: #666; font-size: 14px;">여기에 카드 설명 텍스트가 들어갑니다.</p></div>`
+        };
+
+        // 이미지 인식 실행
+        async function predict() {
+            if (!imgPreview.src) {
+                alert("이미지를 먼저 업로드해주세요.");
+                return;
+            }
+
+            // 티처블 머신으로 이미지 예측값 계산
+            const prediction = await model.predict(imgPreview);
+            
+            // 가장 확률이 높은 클래스 찾기
+            let highestClass = "";
+            let highestProbability = 0;
+            
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].probability > highestProbability) {
+                    highestProbability = prediction[i].probability;
+                    highestClass = prediction[i].className;
+                }
+            }
+
+            console.log(`인식 결과: ${highestClass} (${(highestProbability * 100).toFixed(2)}%)`);
+
+            // 매칭되는 HTML 템플릿 가져오기
+            generatedHTML = htmlTemplates[highestClass] || `<!-- 인식을 실패했거나 등록되지 않은 컴포넌트입니다. -->`;
+
+            // 결과 화면에 반영
+            document.getElementById('htmlCode').innerText = generatedHTML;
+            document.getElementById('uiPreview').innerHTML = generatedHTML;
+            
+            // 다운로드 버튼 활성화
+            document.getElementById('downloadCodeBtn').style.display = 'inline-block';
+        }
+
+        // 사용자가 인식된 결과 코드를 다운로드할 수 있게 만드는 함수
+        function downloadCode() {
+            if (!generatedHTML) return;
+            
+            // 완전한 HTML 문서 구조로 포장
+            const fullDoc = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Generated UI Component</title>
+</head>
+<body style="padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f0f2f5;">
+    \${generatedHTML}
+</body>
+</html>`;
+
+            const blob = new Blob([fullDoc], { type: "text/html" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "generated_component.html";
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+    </script>
+</body>
+</html>
